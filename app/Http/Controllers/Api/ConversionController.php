@@ -89,18 +89,18 @@ class ConversionController extends Controller
 
             // 2. Cek Logic Pembayaran (Middleware Logic)
             // Apakah user boleh lihat hasil? (Ingat logic Hybrid Payment?)
-            if (!$conversion->isVisibleToStudent()) {
-                return response()->json([
-                    'message' => 'Silakan selesaikan pembayaran untuk melihat hasil detail.',
-                    'payment_status' => 'unpaid',
-                    'snap_token' => $conversion->snap_token,
-                    // Tetap kasih summary, tapi sembunyikan detail
-                    'summary' => [
-                        'total_sks_accepted' => $conversion->total_sks_accepted,
-                        'status' => $conversion->status
-                    ]
-                ], 402); // 402 Payment Required
-            }
+            // if (!$conversion->isVisibleToStudent()) {
+            //     return response()->json([
+            //         'message' => 'Silakan selesaikan pembayaran untuk melihat hasil detail.',
+            //         'payment_status' => 'unpaid',
+            //         'snap_token' => $conversion->snap_token,
+            //         // Tetap kasih summary, tapi sembunyikan detail
+            //         'summary' => [
+            //             'total_sks_accepted' => $conversion->total_sks_accepted,
+            //             'status' => $conversion->status
+            //         ]
+            //     ], 402); // 402 Payment Required
+            // }
 
             // 3. Return Data Lengkap
             return response()->json([

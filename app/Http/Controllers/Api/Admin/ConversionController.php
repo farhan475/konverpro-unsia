@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversion;
 use App\Models\ConversionDetail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ConversionController extends Controller
 {
@@ -14,12 +15,17 @@ class ConversionController extends Controller
         // Nanti filter by University ID dari user yang login
         // $universityId = auth()->user()->university_id;
         
+        $user = Auth::user();
         // Untuk sekarang (Testing), kita ambil semua dulu atau hardcode ID UNSIA
-        $conversions = Conversion::with(['student', 'studyProgram'])
-            ->where('status', '!=', 'draft') // Yang draft belum disubmit
-            ->orderBy('created_at', 'desc')
-            ->paginate(10);
+        $query = Conversion::with(['student', 'studyProgram'])
+            ->where('status', '!=', 'draft'); // Yang draft belum disubmit
 
+            if($user->role !== 'super_admin') {
+                $query->where('university_id', $user->university_id);
+            }
+            
+            $conversions = $query->orderBy('created_at', 'desc')->paginate(10);
+            
         return response()->json([
             'message' => 'Data fetched',
             'data' => $conversions

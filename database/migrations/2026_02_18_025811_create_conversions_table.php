@@ -34,7 +34,7 @@ return new class extends Migration
         // Payment Logic
         $table->enum('payment_status', ['free', 'pending', 'paid', 'expired'])->default('pending');
         $table->string('payment_token')->nullable(); // Midtrans Snap Token
-        
+        $table->text('admin_notes')->nullable();
         // IMPROVISASI: Snapshot Data (Penting untuk Audit)
         // Menyimpan nama prodi & kampus SAAT transaksi terjadi.
         // Jika tahun depan nama prodi berubah, data historis ini tidak ikut berubah.
@@ -62,6 +62,7 @@ return new class extends Migration
         $table->float('match_score')->default(0); // 0.0 - 1.0
         $table->string('status')->default('pending');
         $table->text('admin_notes')->nullable(); // Catatan jika direvisi dosen
+        
         
         $table->timestamps();
         $table->softDeletes(); // WAJIB

@@ -60,16 +60,27 @@ class ConversionController extends Controller
      */
     public function finalize(Request $request, $conversionId)
     {
-        $conversion = Conversion::findOrFail($conversionId);
-        
-        $conversion->update([
-            'status' => 'approved',
-            'admin_notes' => $request->notes // Catatan final (misal: "Selamat bergabung")
-        ]);
+        try {
+            // Coba cari datanya
+            $conversion = Conversion::findOrFail($conversionId);
+            
+            // Lakukan update
+            $conversion->update([
+                'status' => 'approved',
+                'admin_notes' => $request->notes
+            ]);
 
-        // TODO: Kirim Email ke Mahasiswa (Nanti)
+            return response()->json([
+                'message' => 'Konversi disetujui sepenuhnya'
+            ], 200);
 
-        return response()->json(['message' => 'Konversi disetujui sepenuhnya']);
+        } catch (\Exception $e) {
+            // JIKA ERROR, TANGKAP DAN KIRIM KE FRONTEND
+            return response()->json([
+                'message' => 'Backend Error: ' . $e->getMessage(),
+                'line' => $e->getLine()
+            ], 500);
+        }
     }
 
     // Helper Private

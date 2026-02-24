@@ -42,6 +42,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('super-admin')->group(    function () {
         Route::get('/campuses', [SuperAdminController::class, 'getCampuses']);
         Route::post('/campuses/{id}/topup', [SuperAdminController::class, 'topupBalance']);
+         Route::get('/users', [SuperAdminController::class, 'getUsers']);
+        Route::post('/users', [SuperAdminController::class, 'storeUser']);
+        Route::delete('/users/{id}', [SuperAdminController::class, 'destroyUser']);
     });
 
     Route::prefix('campus/settings')->group(function () {

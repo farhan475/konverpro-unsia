@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class SuperAdminController extends Controller
 {
@@ -104,11 +105,42 @@ class SuperAdminController extends Controller
     // 5. Hapus User
     public function destroyUser($id)
     {
-        $user = \App\Models\User::findOrFail($id);
+        $user = User::findOrFail($id);
         if ($user->id === Auth::id()) {
             return response()->json(['message' => 'Tidak bisa menghapus diri sendiri'], 403);
         }
         $user->delete();
         return response()->json(['message' => 'User berhasil dihapus']);
+    }
+
+    public function storeCampus(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'slug' => 'required|string|unique:universities,slug',
+            'billing_mode' => 'required|in:subsidy,independent',
+            'student_fee' => 'required|numeric|min:0',
+            'cost_per_check' => 'required|numeric|min:0',
+        ]);
+
+        $university = University::create([
+            'name' => $request->name,
+            'slug' => Str::slug($request->slug),
+            'billing_mode' => $request->billing_mode,
+            'student_fee' => $request->student_fee,
+            'cost_per_check' => $request->cost_per_check,
+            'balance' => 0, // Saldo awal 0
+            'is_active' => true
+        ]);
+
+        return response()->json(['message' => 'Kampus berhasil didaftarkan', 'data' => $university]);
+    }
+
+    // 4. Hapus Kampus
+    public function destroyCampus($id)
+    {
+        $university = University::findOrFail($id);
+        $university->delete();
+        return response()->json(['message' => 'Kampus berhasil dihapus']);
     }
 }

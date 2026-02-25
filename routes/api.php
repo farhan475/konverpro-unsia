@@ -19,7 +19,7 @@ Route::get('/public/campuses', [PublicController::class, 'getActiveCampuses']);
 
 // --- PROTECTED ROUTES (Butuh Login/Token) ---
 Route::middleware('auth:sanctum')->group(function () {
-    
+
     // Auth & User
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', function (Request $request) {
@@ -38,25 +38,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/curriculum/prodi/{prodiId}/courses', [CampusCurriculumController::class, 'getCourses']);
     Route::post('/curriculum/import', [CampusCurriculumController::class, 'import']);
 
-     // 3. BLOK SUPER ADMIN
-    Route::prefix('super-admin')->group(    function () {
+    // 3. BLOK SUPER ADMIN
+    Route::prefix('super-admin')->group(function () {
         Route::get('/campuses', [SuperAdminController::class, 'getCampuses']);
+        Route::post('/campuses', [SuperAdminController::class, 'storeCampus']);
+        Route::delete('/campuses/{id}', [SuperAdminController::class, 'destroyCampus']);
         Route::post('/campuses/{id}/topup', [SuperAdminController::class, 'topupBalance']);
-         Route::get('/users', [SuperAdminController::class, 'getUsers']);
+        Route::get('/users', [SuperAdminController::class, 'getUsers']);
         Route::post('/users', [SuperAdminController::class, 'storeUser']);
         Route::delete('/users/{id}', [SuperAdminController::class, 'destroyUser']);
     });
 
     Route::prefix('campus/settings')->group(function () {
-    Route::get('/profile', [CampusSettingsController::class, 'getProfile']);
-    Route::post('/profile', [CampusSettingsController::class, 'updateProfile']);
-    
-    Route::get('/prodi', [CampusSettingsController::class, 'getProdis']);
-    Route::post('/prodi', [CampusSettingsController::class, 'storeProdi']);
-    Route::delete('/prodi/{id}', [CampusSettingsController::class, 'destroyProdi']);
-    
-    Route::get('/dictionary', [CampusSettingsController::class, 'getDictionary']);
-    Route::put('/dictionary/{courseId}', [CampusSettingsController::class, 'updateDictionary']);
-});
-    
+        Route::get('/profile', [CampusSettingsController::class, 'getProfile']);
+        Route::post('/profile', [CampusSettingsController::class, 'updateProfile']);
+
+        Route::get('/prodi', [CampusSettingsController::class, 'getProdis']);
+        Route::post('/prodi', [CampusSettingsController::class, 'storeProdi']);
+        Route::delete('/prodi/{id}', [CampusSettingsController::class, 'destroyProdi']);
+
+        Route::get('/dictionary', [CampusSettingsController::class, 'getDictionary']);
+        Route::put('/dictionary/{courseId}', [CampusSettingsController::class, 'updateDictionary']);
+    });
 });

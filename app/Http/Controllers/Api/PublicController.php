@@ -26,4 +26,46 @@ class PublicController extends Controller
             'data' => $campuses
         ]);
     }
+
+    public function getMarketplaceData()
+    {
+        $universities = University::where('is_active', true)
+            ->with(['studyPrograms' => function ($query) {
+                // Ambil prodi yang aktif beserta courses-nya
+                $query->where('is_active', true)
+                      ->with(['courses' => function ($q) {
+                          // Ambil nama, sks, dan keywords untuk AI
+                          $q->select('id', 'study_program_id', 'code', 'name', 'sks', 'keywords', 'is_mandatory');
+                      }]);
+            }])
+            ->get();
+
+        // Kita format/mapping datanya agar gampang dikonsumsi Frontend
+        $formattedData = [];
+
+        foreach ($universities as $univ) {
+            foreach ($univ->studyPrograms as $prodi) {
+                $formattedData[] = [
+                    'id' => $univ->id, // University ID
+                    'study_program_id' => $prodi->id,
+                    'campus' => $univ->name,
+                    'isOfficial' => $univ->is_partner,
+                    'logoPath' => $univ->logo_path,
+                    'province' => $univ->settings['province'] ?? 'Umum',
+                    'type' => $univ->settings['type'] ?? 'PTS',
+                    'lecture' => $univ->settings['lecture'] ?? 'Online/Offline',
+                    'prodiName' => $prodi->name,
+                    'strata' => $prodi->level,
+                    'tuition' => $univ->student_fee, // Asumsi dari config atau DB
+                    'registrationFee' => $univ->cost_per_check,
+                    'courses' => $prodi->courses // Daftar MK untuk bahan matching
+                ];
+            }
+        }
+
+        return response()->json([
+            'message' => 'Data Marketplace Ready',
+            'data' => $formattedData
+        ]);
+    }
 }

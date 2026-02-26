@@ -15,6 +15,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/conversions', [ConversionController::class, 'store']);
 Route::get('/conversions/{id}', [ConversionController::class, 'show']);
 Route::get('/public/campuses', [PublicController::class, 'getActiveCampuses']);
+Route::get('/public/marketplace', [PublicController::class, 'getMarketplaceData']);
 
 
 // --- PROTECTED ROUTES (Butuh Login/Token) ---
@@ -31,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/conversions', [AdminConversionController::class, 'index']);
         Route::post('/review-detail/{detailId}', [AdminConversionController::class, 'reviewDetail']);
         Route::post('/finalize/{conversionId}', [AdminConversionController::class, 'finalize']);
+        Route::get('/dashboard-stats', [AdminConversionController::class, 'getDashboardStats']);
     });
 
     // 2. BLOK MANAJEMEN KURIKULUM (Tanpa prefix /admin)

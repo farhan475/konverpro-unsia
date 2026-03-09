@@ -65,6 +65,26 @@ class CampusSettingsController extends Controller
         return response()->json(['message' => 'Prodi berhasil ditambahkan', 'data' => $prodi]);
     }
 
+    public function updateProdi(Request $request, $id)
+    {
+        $prodi = StudyProgram::where('id', $id)
+            ->where('university_id', Auth::user()->university_id)
+            ->firstOrFail();
+
+        $request->validate([
+            'name' => 'sometimes|required|string',
+            'code' => 'sometimes|required|string',
+            'level' => 'sometimes|required|in:D3,D4,S1,S2',
+            'settings' => 'nullable|array'
+        ]);
+
+        $data = $request->only(['name', 'code', 'level', 'settings']);
+        
+        $prodi->update($data);
+
+        return response()->json(['message' => 'Prodi berhasil diperbarui', 'data' => $prodi]);
+    }
+
     public function destroyProdi($id)
     {
         $prodi = StudyProgram::where('id', $id)
@@ -73,6 +93,18 @@ class CampusSettingsController extends Controller
             
         $prodi->delete(); // Soft delete bekerja di sini
         return response()->json(['message' => 'Prodi berhasil dihapus']);
+    }
+
+    // ==========================================
+    // 2.5. BILLING HISTORY
+    // ==========================================
+    public function getBillingHistory()
+    {
+        $transactions = \App\Models\Transaction::where('university_id', Auth::user()->university_id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json(['data' => $transactions]);
     }
 
     // ==========================================

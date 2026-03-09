@@ -30,6 +30,8 @@ class ConversionController extends Controller
             // Wajib ada nama & email untuk Lead Capture
             'name'             => 'required|string', 
             'email'            => 'required|email',
+            'phone'            => 'nullable|string',
+            'source_campus'    => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -47,9 +49,25 @@ class ConversionController extends Controller
                     'password' => Hash::make('password123'), // Default password
                     'role' => 'student',
                     'is_active' => true,
-                    'profile_data' => ['source' => 'api_upload']
+                    'profile_data' => [
+                        'source' => 'api_upload',
+                        'phone' => $request->phone,
+                        'source_campus' => $request->source_campus
+                    ]
                 ]
             );
+
+            // Jika user sudah ada, update profile_data untuk memastikan phone dan campus tidak hilang
+            if (!$student->wasRecentlyCreated && ($request->phone || $request->source_campus)) {
+                $profile = is_array($student->profile_data) ? $student->profile_data : [];
+                $profile['phone'] = $request->phone ?? ($profile['phone'] ?? null);
+                $profile['source_campus'] = $request->source_campus ?? ($profile['source_campus'] ?? null);
+                $student->profile_data = $profile;
+                if ($request->name && $student->name !== $request->name) {
+                    $student->name = $request->name;
+                }
+                $student->save();
+            }
 
             // 3. Siapkan Data
             $data = [
@@ -63,7 +81,7 @@ class ConversionController extends Controller
 
             return response()->json([
                 'message' => 'Transkrip berhasil diunggah',
-                'lead_status' => $student->wasRecentlyCreated ? 'New User Created' : 'User Found',
+                'lead_status' => $student->wasRecentlyCreated ? 'New User Created' : 'User Found and Updated',
                 'data' => $conversion
             ], 201);
 
@@ -86,21 +104,6 @@ class ConversionController extends Controller
                 'student:id,name,email',
                 'details.targetCourse' // Load detail MK dan MK tujuannya
             ])->findOrFail($id);
-
-            // 2. Cek Logic Pembayaran (Middleware Logic)
-            // Apakah user boleh lihat hasil? (Ingat logic Hybrid Payment?)
-            // if (!$conversion->isVisibleToStudent()) {
-            //     return response()->json([
-            //         'message' => 'Silakan selesaikan pembayaran untuk melihat hasil detail.',
-            //         'payment_status' => 'unpaid',
-            //         'snap_token' => $conversion->snap_token,
-            //         // Tetap kasih summary, tapi sembunyikan detail
-            //         'summary' => [
-            //             'total_sks_accepted' => $conversion->total_sks_accepted,
-            //             'status' => $conversion->status
-            //         ]
-            //     ], 402); // 402 Payment Required
-            // }
 
             // 3. Return Data Lengkap
             return response()->json([

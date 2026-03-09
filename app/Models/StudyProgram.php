@@ -12,11 +12,12 @@ class StudyProgram extends Model
     use HasFactory, HasUuids, SoftDeletes;
 
     protected $fillable = [
-        'university_id', 'code', 'name', 'level', 'is_active'
+        'university_id', 'code', 'name', 'level', 'is_active', 'settings'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'settings' => 'array',
     ];
 
 

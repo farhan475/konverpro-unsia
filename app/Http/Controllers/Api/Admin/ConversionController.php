@@ -62,18 +62,49 @@ class ConversionController extends Controller
     public function finalize(Request $request, $conversionId)
     {
         try {
+            \Illuminate\Support\Facades\DB::beginTransaction();
+
             $conversion = Conversion::findOrFail($conversionId);
             
+            // Deduct balance and create transaction if not already approved
+            if ($conversion->status !== 'approved') {
+                $university = University::findOrFail($conversion->university_id);
+                $cost = 0;
+                
+                // If the student is a lead, you would charge lead rate, if internal, internal rate
+                // Assuming cost_per_check represents the default internal rate
+                $cost = $university->cost_per_check; 
+                
+                if ($university->billing_mode !== 'independent') {
+                    if ($university->balance < $cost) {
+                        return response()->json(['message' => 'Saldo kampus tidak mencukupi.'], 400);
+                    }
+                    $university->decrement('balance', $cost);
+
+                    \App\Models\Transaction::create([
+                        'invoice_number' => 'CNV-' . time() . '-' . $conversion->id,
+                        'university_id' => $university->id,
+                        'user_id' => Auth::id(),
+                        'type' => 'conversion_fee',
+                        'amount' => -$cost,
+                        'status' => 'success'
+                    ]);
+                }
+            }
+
             $conversion->update([
                 'status' => 'approved',
                 'admin_notes' => $request->notes
             ]);
+
+            \Illuminate\Support\Facades\DB::commit();
 
             return response()->json([
                 'message' => 'Konversi disetujui sepenuhnya'
             ], 200);
 
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
             // JIKA ERROR, TANGKAP DAN KIRIM KE FRONTEND
             return response()->json([
                 'message' => 'Backend Error: ' . $e->getMessage(),

@@ -21,6 +21,7 @@ class UniversitySeeder extends Seeder
             'balance' => 10_000_000, // Deposit 10 Juta
             'cost_per_check' => 15000, // Sekali cek potong 15rb
             'student_registration_fee' => 0,
+            'student_fee' => 4500000,
             'is_active' => true,
             'is_partner' => true,
             'logo_path' => null, // Nanti diupdate via upload
@@ -36,6 +37,7 @@ class UniversitySeeder extends Seeder
             'balance' => 0,
             'cost_per_check' => 0,
             'student_registration_fee' => 50000, // Mahasiswa bayar 50rb
+            'student_fee' => 5200000,
             'is_active' => true,
             'is_partner' => false,
         ]);

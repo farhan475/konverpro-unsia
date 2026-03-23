@@ -3,12 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\University;
-use App\Models\StudyProgram;
+use App\Http\Requests\Campus\StoreStudyProgramRequest;
+use App\Http\Requests\Campus\StoreTopupRequestRequest;
+use App\Http\Requests\Campus\UpdateAcademicSettingsRequest;
+use App\Http\Requests\Campus\UpdateCampusProfileRequest;
+use App\Http\Requests\Campus\UpdateDictionaryRequest;
+use App\Http\Requests\Campus\UpdateStudyProgramRequest;
 use App\Models\Course;
-use Illuminate\Http\Request;
+use App\Models\StudyProgram;
+use App\Models\Transaction;
+use App\Models\University;
+use App\Services\Campus\CampusSettingsService;
+use App\Support\AcademicSettingsSupport;
+use App\Support\ApiResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 
 class CampusSettingsController extends Controller
 {
@@ -18,23 +26,30 @@ class CampusSettingsController extends Controller
     public function getProfile()
     {
         $university = University::findOrFail(Auth::user()->university_id);
-        return response()->json(['data' => $university]);
+        $settings = is_array($university->settings) ? $university->settings : [];
+
+        return ApiResponse::success([
+            ...$university->toArray(),
+            'email' => $settings['email'] ?? null,
+            'phone' => $settings['phone'] ?? null,
+            'address' => $settings['address'] ?? null,
+        ]);
     }
 
-    public function updateProfile(Request $request)
-    {
+    public function updateProfile(
+        UpdateCampusProfileRequest $request,
+        CampusSettingsService $service,
+    ) {
         $university = University::findOrFail(Auth::user()->university_id);
-        
-        $data = $request->only(['name', 'website']);
-        
-        // Handle upload logo jika ada
-        if ($request->hasFile('logo')) {
-            $path = $request->file('logo')->store('logos', 'public');
-            $data['logo_path'] = $path;
-        }
 
-        $university->update($data);
-        return response()->json(['message' => 'Profil berhasil diperbarui', 'data' => $university]);
+        return ApiResponse::success(
+            $service->updateProfile(
+                $university,
+                $request->validated(),
+                $request->file('logo'),
+            ),
+            'Profil berhasil diperbarui',
+        );
     }
 
     // ==========================================
@@ -43,46 +58,61 @@ class CampusSettingsController extends Controller
     public function getProdis()
     {
         $prodis = StudyProgram::where('university_id', Auth::user()->university_id)->get();
-        return response()->json(['data' => $prodis]);
+
+        return ApiResponse::success($prodis);
     }
 
-    public function storeProdi(Request $request)
+    public function storeProdi(StoreStudyProgramRequest $request, CampusSettingsService $service)
     {
-        $request->validate([
-            'code' => 'required|string',
-            'name' => 'required|string',
-            'level' => 'required|in:D3,D4,S1,S2'
-        ]);
-
-        $prodi = StudyProgram::create([
-            'university_id' => Auth::user()->university_id,
-            'code' => $request->code,
-            'name' => $request->name,
-            'level' => $request->level,
-            'is_active' => true
-        ]);
-
-        return response()->json(['message' => 'Prodi berhasil ditambahkan', 'data' => $prodi]);
+        return ApiResponse::success(
+            $service->createStudyProgram(
+                (string) Auth::user()->university_id,
+                $request->validated(),
+            ),
+            'Prodi berhasil ditambahkan',
+        );
     }
 
-    public function updateProdi(Request $request, $id)
+    public function updateProdi(
+        UpdateStudyProgramRequest $request,
+        string $id,
+        CampusSettingsService $service,
+    ) {
+        return ApiResponse::success(
+            $service->updateStudyProgram(
+                (string) Auth::user()->university_id,
+                $id,
+                $request->validated(),
+            ),
+            'Prodi berhasil diperbarui',
+        );
+    }
+
+    public function getAcademicSettings($id)
     {
         $prodi = StudyProgram::where('id', $id)
             ->where('university_id', Auth::user()->university_id)
             ->firstOrFail();
 
-        $request->validate([
-            'name' => 'sometimes|required|string',
-            'code' => 'sometimes|required|string',
-            'level' => 'sometimes|required|in:D3,D4,S1,S2',
-            'settings' => 'nullable|array'
-        ]);
+        $courses = Course::where('study_program_id', $prodi->id)
+            ->get(['id', 'study_program_id', 'code', 'name', 'sks', 'semester', 'is_mandatory']);
 
-        $data = $request->only(['name', 'code', 'level', 'settings']);
-        
-        $prodi->update($data);
+        return ApiResponse::success(AcademicSettingsSupport::resolve($prodi, $courses));
+    }
 
-        return response()->json(['message' => 'Prodi berhasil diperbarui', 'data' => $prodi]);
+    public function updateAcademicSettings(
+        UpdateAcademicSettingsRequest $request,
+        string $id,
+        CampusSettingsService $service,
+    ) {
+        return ApiResponse::success(
+            $service->saveAcademicSettings(
+                (string) Auth::user()->university_id,
+                $id,
+                $request->validated(),
+            ),
+            'Pengaturan akademik berhasil diperbarui',
+        );
     }
 
     public function destroyProdi($id)
@@ -90,9 +120,10 @@ class CampusSettingsController extends Controller
         $prodi = StudyProgram::where('id', $id)
             ->where('university_id', Auth::user()->university_id)
             ->firstOrFail();
-            
+
         $prodi->delete(); // Soft delete bekerja di sini
-        return response()->json(['message' => 'Prodi berhasil dihapus']);
+
+        return ApiResponse::success(null, 'Prodi berhasil dihapus');
     }
 
     // ==========================================
@@ -100,11 +131,25 @@ class CampusSettingsController extends Controller
     // ==========================================
     public function getBillingHistory()
     {
-        $transactions = \App\Models\Transaction::where('university_id', Auth::user()->university_id)
+        $transactions = Transaction::where('university_id', Auth::user()->university_id)
             ->orderBy('created_at', 'desc')
             ->get();
 
-        return response()->json(['data' => $transactions]);
+        $mapped = $transactions->map(function (Transaction $transaction) {
+            return [
+                'id' => $transaction->id,
+                'trx_id' => $transaction->invoice_number,
+                'type' => $transaction->type,
+                'amount' => abs((float) $transaction->amount),
+                'created_at' => $transaction->created_at,
+                'status' => $transaction->status === 'success'
+                    ? 'approved'
+                    : ($transaction->status === 'failed' ? 'rejected' : 'pending'),
+                'university_id' => $transaction->university_id,
+            ];
+        });
+
+        return ApiResponse::success($mapped);
     }
 
     // ==========================================
@@ -113,27 +158,38 @@ class CampusSettingsController extends Controller
     public function getDictionary()
     {
         // Ambil semua mata kuliah milik kampus ini
-        $courses = Course::whereHas('studyProgram', function($q) {
+        $courses = Course::whereHas('studyProgram', function ($q) {
             $q->where('university_id', Auth::user()->university_id);
         })->get(['id', 'name', 'keywords']);
 
-        return response()->json(['data' => $courses]);
+        return ApiResponse::success($courses);
     }
 
-    public function updateDictionary(Request $request, $courseId)
-    {
-        $request->validate([
-            'keywords' => 'nullable|array'
-        ]);
+    public function updateDictionary(
+        UpdateDictionaryRequest $request,
+        string $courseId,
+        CampusSettingsService $service,
+    ) {
+        $service->updateDictionary(
+            (string) Auth::user()->university_id,
+            $courseId,
+            $request->validated(),
+        );
 
-        $course = Course::whereHas('studyProgram', function($q) {
-            $q->where('university_id', Auth::user()->university_id);
-        })->findOrFail($courseId);
+        return ApiResponse::success(null, 'Kamus berhasil diperbarui');
+    }
 
-        $course->update([
-            'keywords' => $request->keywords
-        ]);
-
-        return response()->json(['message' => 'Kamus berhasil diperbarui']);
+    public function storeTopupRequest(
+        StoreTopupRequestRequest $request,
+        CampusSettingsService $service,
+    ) {
+        return ApiResponse::created(
+            $service->createTopupRequest(
+                (string) Auth::user()->university_id,
+                (string) Auth::id(),
+                (float) $request->validated('amount'),
+            ),
+            'Permintaan top up berhasil dibuat',
+        );
     }
 }

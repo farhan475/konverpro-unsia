@@ -15,7 +15,6 @@ Route::post('/conversions', [ConversionController::class, 'store']);
 Route::get('/conversions/{id}', [ConversionController::class, 'show']);
 Route::get('/public/campuses', [PublicController::class, 'getActiveCampuses']);
 Route::get('/public/marketplace', [PublicController::class, 'getMarketplaceData']);
-Route::post('/public/simulate', [\App\Http\Controllers\Api\SimulationController::class, 'simulate']);
 Route::get('/public/template', [PublicController::class, 'downloadTemplate']);
 
 
@@ -29,20 +28,24 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // 1. BLOK ADMIN KONVERSI (Pakai prefix /admin)
-    Route::prefix('admin')->group(function () {
+    Route::middleware('role:campus_admin,prodi_admin,super_admin')->prefix('admin')->group(function () {
         Route::get('/conversions', [AdminConversionController::class, 'index']);
+        Route::get('/conversions/{id}', [AdminConversionController::class, 'show']);
+        Route::get('/conversions/{id}/official-document', [AdminConversionController::class, 'officialDocument']);
         Route::post('/review-detail/{detailId}', [AdminConversionController::class, 'reviewDetail']);
         Route::post('/finalize/{conversionId}', [AdminConversionController::class, 'finalize']);
         Route::get('/dashboard-stats', [AdminConversionController::class, 'getDashboardStats']);
     });
 
     // 2. BLOK MANAJEMEN KURIKULUM (Tanpa prefix /admin)
-    Route::get('/curriculum/prodi', [CampusCurriculumController::class, 'getProdi']);
-    Route::get('/curriculum/prodi/{prodiId}/courses', [CampusCurriculumController::class, 'getCourses']);
-    Route::post('/curriculum/import', [CampusCurriculumController::class, 'import']);
+    Route::middleware('role:campus_admin,prodi_admin')->group(function () {
+        Route::get('/curriculum/prodi', [CampusCurriculumController::class, 'getProdi']);
+        Route::get('/curriculum/prodi/{prodiId}/courses', [CampusCurriculumController::class, 'getCourses']);
+        Route::post('/curriculum/import', [CampusCurriculumController::class, 'import']);
+    });
 
     // 3. BLOK SUPER ADMIN
-    Route::prefix('super-admin')->group(function () {
+    Route::middleware('role:super_admin')->prefix('super-admin')->group(function () {
         // Campus Management
         Route::get('/campuses', [\App\Http\Controllers\Api\SuperAdmin\CampusController::class, 'index']);
         Route::post('/campuses', [\App\Http\Controllers\Api\SuperAdmin\CampusController::class, 'store']);
@@ -77,9 +80,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // Audit Logs & Reporting
         Route::get('/reports/audit-logs', [\App\Http\Controllers\Api\SuperAdmin\ReportController::class, 'getAuditLogs']);
         Route::get('/reports/revenue', [\App\Http\Controllers\Api\SuperAdmin\ReportController::class, 'getRevenueChart']);
+        Route::get('/reports/overview', [\App\Http\Controllers\Api\SuperAdmin\ReportController::class, 'getOverview']);
     });
 
-    Route::prefix('campus/settings')->group(function () {
+    Route::middleware('role:campus_admin,prodi_admin')->prefix('campus/settings')->group(function () {
         Route::get('/profile', [CampusSettingsController::class, 'getProfile']);
         Route::post('/profile', [CampusSettingsController::class, 'updateProfile']);
 
@@ -87,10 +91,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/prodi', [CampusSettingsController::class, 'storeProdi']);
         Route::put('/prodi/{id}', [CampusSettingsController::class, 'updateProdi']);
         Route::delete('/prodi/{id}', [CampusSettingsController::class, 'destroyProdi']);
+        Route::get('/prodi/{id}/academic-settings', [CampusSettingsController::class, 'getAcademicSettings']);
+        Route::put('/prodi/{id}/academic-settings', [CampusSettingsController::class, 'updateAcademicSettings']);
 
         Route::get('/dictionary', [CampusSettingsController::class, 'getDictionary']);
         Route::put('/dictionary/{courseId}', [CampusSettingsController::class, 'updateDictionary']);
 
         Route::get('/billing-history', [CampusSettingsController::class, 'getBillingHistory']);
+        Route::post('/topups', [CampusSettingsController::class, 'storeTopupRequest']);
     });
 });

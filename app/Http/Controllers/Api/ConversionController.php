@@ -2,119 +2,98 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\User;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Conversion\StoreConversionRequest;
 use App\Models\Conversion;
-use App\Services\ConversionService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
+use App\Models\Course;
+use App\Services\ConversionSubmissionService;
+use App\Support\ApiResponse;
 
 class ConversionController extends Controller
 {
-    protected $conversionService;
+    public function store(
+        StoreConversionRequest $request,
+        ConversionSubmissionService $service,
+    ) {
+        $result = $service->submit($request->validated(), $request->file('file'));
 
-    // Inject Service ke Constructor
-    public function __construct(ConversionService $conversionService)
-    {
-        $this->conversionService = $conversionService;
-    }
-
-    public function store(Request $request)
-    {
-        // 1. VALIDASI DULUAN (Best Practice: Validasi sebelum logic berat)
-        $validator = Validator::make($request->all(), [
-            'university_id'    => 'required|exists:universities,id',
-            'study_program_id' => 'required|exists:study_programs,id',
-            'file'             => 'required|file|mimes:xlsx,xls,csv|max:5120',
-            // Wajib ada nama & email untuk Lead Capture
-            'name'             => 'required|string', 
-            'email'            => 'required|email',
-            'phone'            => 'nullable|string',
-            'source_campus'    => 'nullable|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            // 2. SMART LEAD CAPTURE (Cari atau Buat Baru)
-            // Ini solusi agar tidak error "User tidak ditemukan" untuk pendaftar baru
-            $student = User::firstOrCreate(
-                ['email' => $request->email], // Cek berdasarkan email
-                [
-                    // Jika belum ada, isi data ini:
-                    'name' => $request->name,
-                    'password' => Hash::make('password123'), // Default password
-                    'role' => 'student',
-                    'is_active' => true,
-                    'profile_data' => [
-                        'source' => 'api_upload',
-                        'phone' => $request->phone,
-                        'source_campus' => $request->source_campus
-                    ]
-                ]
-            );
-
-            // Jika user sudah ada, update profile_data untuk memastikan phone dan campus tidak hilang
-            if (!$student->wasRecentlyCreated && ($request->phone || $request->source_campus)) {
-                $profile = is_array($student->profile_data) ? $student->profile_data : [];
-                $profile['phone'] = $request->phone ?? ($profile['phone'] ?? null);
-                $profile['source_campus'] = $request->source_campus ?? ($profile['source_campus'] ?? null);
-                $student->profile_data = $profile;
-                if ($request->name && $student->name !== $request->name) {
-                    $student->name = $request->name;
-                }
-                $student->save();
-            }
-
-            // 3. Siapkan Data
-            $data = [
-                'student_id'       => $student->id,
-                'university_id'    => $request->university_id,
-                'study_program_id' => $request->study_program_id,
-            ];
-
-            // 4. Panggil Service
-            $conversion = $this->conversionService->submitTranscript($data, $request->file('file'));
-
-            return response()->json([
-                'message' => 'Transkrip berhasil diunggah',
-                'lead_status' => $student->wasRecentlyCreated ? 'New User Created' : 'User Found and Updated',
-                'data' => $conversion
-            ], 201);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Terjadi kesalahan sistem',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return ApiResponse::created(
+            $result['conversion'],
+            'Transkrip berhasil diunggah',
+            [
+                'lead_status' => $result['lead_status'],
+            ],
+        );
     }
 
     public function show($id)
     {
-        try {
-            // 1. Cari Data Konversi beserta Detailnya
-            // Kita gunakan 'with' (Eager Loading) biar query cepat
-            $conversion = Conversion::with([
-                'university:id,name,logo_path', // Cuma ambil kolom penting
-                'studyProgram:id,name',
-                'student:id,name,email',
-                'details.targetCourse' // Load detail MK dan MK tujuannya
-            ])->findOrFail($id);
+        $conversion = Conversion::with([
+            'university:id,name,logo_path,student_registration_fee,student_fee,is_partner,settings',
+            'studyProgram:id,name,level',
+            'details.targetCourse:id,code,name',
+        ])->findOrFail($id);
 
-            // 3. Return Data Lengkap
-            return response()->json([
-                'message' => 'Detail Konversi Ditemukan',
-                'data' => $conversion
-            ], 200);
+        $studyProgram = $conversion->studyProgram;
+        $university = $conversion->university;
+        $settings = is_array($university?->settings) ? $university->settings : [];
+        $requiredSks = $studyProgram
+            ? Course::where('study_program_id', $studyProgram->id)->sum('sks')
+            : 0;
+        $acceptedSks = (int) ($conversion->total_sks_accepted ?? 0);
+        $remainingSks = max($requiredSks - $acceptedSks, 0);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['message' => 'Data konversi tidak ditemukan'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 500);
-        }
+        return ApiResponse::success([
+            'id' => $conversion->id,
+            'trx_id' => $conversion->trx_id,
+            'status' => $conversion->status,
+            'payment_status' => $conversion->payment_status,
+            'total_sks_accepted' => $acceptedSks,
+            'total_sks_target' => $remainingSks,
+            'total_sks_required' => $requiredSks,
+            'estimated_semesters' => $remainingSks > 0 ? (int) ceil($remainingSks / 20) : 0,
+            'estimated_years' => $remainingSks > 0 ? round(ceil($remainingSks / 20) / 2, 1) : 0,
+            'tuition_per_semester' => (float) ($university?->student_fee ?? 0),
+            'registration_fee' => (float) ($university?->student_registration_fee ?? 0),
+            'university' => [
+                'id' => $university?->id,
+                'name' => $university?->name,
+                'city' => $settings['city'] ?? null,
+                'province' => $settings['province'] ?? null,
+                'learning_method' => $settings['lecture'] ?? null,
+                'is_official_partner' => (bool) ($university?->is_partner ?? false),
+            ],
+            'study_program' => [
+                'id' => $studyProgram?->id,
+                'name' => $studyProgram?->name,
+                'total_sks' => $requiredSks,
+            ],
+            'details' => $conversion->details->map(function ($detail) {
+                return [
+                    'id' => $detail->id,
+                    'status' => $detail->status,
+                    'src_name' => $detail->src_name,
+                    'src_sks' => $detail->src_sks,
+                    'src_grade' => $detail->src_grade,
+                    'target_course' => $detail->targetCourse
+                        ? [
+                            'code' => $detail->targetCourse->code,
+                            'name' => $detail->targetCourse->name,
+                        ]
+                        : null,
+                ];
+            })->values(),
+            'notes' => array_values(array_filter([
+                $conversion->status === 'processing'
+                    ? 'Transkrip sedang diproses oleh sistem. Silakan tunggu beberapa saat lagi.'
+                    : null,
+                $conversion->status === 'draft' && $conversion->payment_status === 'pending'
+                    ? 'Simulasi menunggu pembayaran mahasiswa sebelum hasil lengkap dapat dibuka.'
+                    : null,
+                $conversion->status === 'review'
+                    ? 'Sebagian hasil masih menunggu validasi admin kampus.'
+                    : null,
+            ])),
+        ], 'Detail Konversi Ditemukan');
     }
 }

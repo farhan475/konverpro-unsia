@@ -3,67 +3,24 @@
 namespace App\Http\Controllers\Api\SuperAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Transaction;
-use App\Models\University;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use App\Http\Requests\SuperAdmin\ProcessTopupRequest;
+use App\Services\SuperAdmin\TopupManagementService;
+use App\Support\ApiResponse;
 
 class FinanceController extends Controller
 {
-    public function indexTopups()
+    public function indexTopups(TopupManagementService $service)
     {
-        $topups = Transaction::with('university:id,name')
-            ->where('type', 'topup')
-            ->orderBy('created_at', 'desc')
-            ->get();
-            
-        // Map data to match frontend expectations (status pending/approved)
-        $mapped = $topups->map(function($t) {
-            return [
-                'id' => $t->id,
-                'campusId' => $t->university_id,
-                'campusName' => $t->university->name ?? 'Unknown',
-                'amount' => $t->amount,
-                'status' => $t->status === 'success' ? 'approved' : 'pending'
-            ];
-        });
-
-        return response()->json(['data' => $mapped]);
+        return ApiResponse::success($service->list());
     }
 
-    public function processTopup(Request $request, $id)
-    {
-        $request->validate([
-            'status' => 'required|in:approved,rejected'
-        ]);
+    public function processTopup(
+        ProcessTopupRequest $request,
+        string $id,
+        TopupManagementService $service,
+    ) {
+        $service->process($id, (string) $request->validated('status'), $request);
 
-        try {
-            DB::beginTransaction();
-
-            $transaction = Transaction::findOrFail($id);
-            
-            if ($transaction->status === 'success') {
-                return response()->json(['message' => 'Transaksi sudah disetujui sebelumnya'], 400);
-            }
-
-            if ($request->status === 'approved') {
-                $transaction->status = 'success';
-                $transaction->save();
-                
-                // Tambah saldo kampus
-                $university = University::findOrFail($transaction->university_id);
-                $university->increment('balance', $transaction->amount);
-            } else {
-                $transaction->status = 'failed';
-                $transaction->save();
-            }
-
-            DB::commit();
-
-            return response()->json(['message' => 'Topup berhasil diproses']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Gagal memproses Top Up: ' . $e->getMessage()], 500);
-        }
+        return ApiResponse::success(null, 'Topup berhasil diproses');
     }
 }

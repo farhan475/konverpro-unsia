@@ -3,31 +3,21 @@
 namespace App\Http\Controllers\Api\SuperAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\GlobalSetting;
-use Illuminate\Http\Request;
+use App\Http\Requests\SuperAdmin\SaveGlobalSettingsRequest;
+use App\Services\SuperAdmin\GlobalSettingService;
+use App\Support\ApiResponse;
 
 class GlobalSettingController extends Controller
 {
-    public function index()
+    public function index(GlobalSettingService $service)
     {
-        // Return all settings as key-value pairs
-        $settings = GlobalSetting::all()->pluck('value', 'key');
-        return response()->json(['data' => $settings]);
+        return ApiResponse::success($service->list());
     }
 
-    public function store(Request $request)
+    public function store(SaveGlobalSettingsRequest $request, GlobalSettingService $service)
     {
-        $request->validate([
-            'settings' => 'required|array'
-        ]);
+        $service->save($request->validated('settings'));
 
-        foreach ($request->settings as $key => $value) {
-            GlobalSetting::updateOrCreate(
-                ['key' => $key],
-                ['value' => $value]
-            );
-        }
-
-        return response()->json(['message' => 'Setelan global berhasil disimpan']);
+        return ApiResponse::success(null, 'Setelan global berhasil disimpan');
     }
 }

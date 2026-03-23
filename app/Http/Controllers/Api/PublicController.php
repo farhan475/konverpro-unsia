@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\University;
+use App\Support\ApiResponse;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
 class PublicController extends Controller
@@ -13,33 +15,65 @@ class PublicController extends Controller
      */
     public function getActiveCampuses()
     {
-        $campuses = University::where('is_active', true)
+        $campuses = University::query()
+            ->select(['id', 'name', 'logo_path', 'is_partner', 'settings'])
+            ->where('is_active', true)
             ->with(['studyPrograms' => function ($query) {
-                $query->where('is_active', true);
+                $query->select(['id', 'university_id', 'name', 'level'])
+                    ->where('is_active', true);
             }])
-            ->get(['id', 'name', 'logo_path']);
+            ->get(['id', 'name', 'logo_path', 'is_partner', 'settings']);
 
-        return response()->json([
-            'message' => 'Daftar kampus berhasil diambil',
-            'data' => $campuses
-        ]);
+        return ApiResponse::success($campuses, 'Daftar kampus berhasil diambil');
     }
 
     public function getMarketplaceData(Request $request)
     {
-        $query = University::where('is_active', true)
+        $query = University::query()
+            ->select([
+                'id',
+                'name',
+                'logo_path',
+                'student_fee',
+                'student_registration_fee',
+                'is_partner',
+                'settings',
+            ])
+            ->where('is_active', true)
             ->with(['studyPrograms' => function ($q) use ($request) {
-                $q->where('is_active', true);
-                if ($request->has('prodi_name')) {
-                    $q->where('name', 'like', '%' . $request->prodi_name . '%');
+                $q->select(['id', 'university_id', 'name', 'level'])
+                    ->where('is_active', true);
+
+                if ($request->filled('prodi_name')) {
+                    $q->where('name', 'like', '%'.$request->string('prodi_name')->toString().'%');
                 }
+
                 $q->with(['courses' => function ($q2) {
                     $q2->select('id', 'study_program_id', 'code', 'name', 'sks', 'keywords', 'is_mandatory');
                 }]);
             }]);
 
-        if ($request->has('campus_name')) {
-            $query->where('name', 'like', '%' . $request->campus_name . '%');
+        if ($request->filled('campus_name')) {
+            $query->where('name', 'like', '%'.$request->string('campus_name')->toString().'%');
+        }
+
+        if ($request->filled('province') && strtolower($request->string('province')->toString()) !== 'semua') {
+            $this->applyJsonSettingFilter($query, 'province', $request->string('province')->toString());
+        }
+
+        if ($request->filled('type') && strtolower($request->string('type')->toString()) !== 'semua') {
+            $this->applyJsonSettingFilter($query, 'type', $request->string('type')->toString());
+        }
+
+        if ($request->filled('lecture') && strtolower($request->string('lecture')->toString()) !== 'semua') {
+            $this->applyJsonSettingFilter($query, 'lecture', $request->string('lecture')->toString());
+        }
+
+        if ($request->filled('prodi_name')) {
+            $query->whereHas('studyPrograms', function (Builder $q) use ($request) {
+                $q->where('is_active', true)
+                    ->where('name', 'like', '%'.$request->string('prodi_name')->toString().'%');
+            });
         }
 
         $universities = $query->get();
@@ -47,22 +81,11 @@ class PublicController extends Controller
         $formattedData = [];
 
         foreach ($universities as $univ) {
-            // Apply JSON settings filters manually if needed (or via whereJsonContains if using MySQL 5.7+)
             $settings = $univ->settings ?? [];
             $province = $settings['province'] ?? 'Umum';
             $type = $settings['type'] ?? 'PTS';
             $lecture = $settings['lecture'] ?? 'Online/Offline';
             $city = $settings['city'] ?? '';
-
-            if ($request->has('province') && strtolower($province) !== strtolower($request->province) && strtolower($request->province) !== 'semua') {
-                continue;
-            }
-            if ($request->has('type') && strtolower($type) !== strtolower($request->type) && strtolower($request->type) !== 'semua') {
-                continue;
-            }
-            if ($request->has('lecture') && strtolower($lecture) !== strtolower($request->lecture) && strtolower($request->lecture) !== 'semua') {
-                continue;
-            }
 
             foreach ($univ->studyPrograms as $prodi) {
                 $formattedData[] = [
@@ -77,9 +100,9 @@ class PublicController extends Controller
                     'lecture' => $lecture,
                     'prodiName' => $prodi->name,
                     'strata' => $prodi->level,
-                    'tuition' => $univ->student_fee ?? 0, 
-                    'registrationFee' => $univ->cost_per_check ?? $univ->student_registration_fee ?? 0,
-                    'courses' => $prodi->courses
+                    'tuition' => $univ->student_fee ?? 0,
+                    'registrationFee' => $univ->student_registration_fee ?? 0,
+                    'courses' => $prodi->courses,
                 ];
             }
         }
@@ -87,24 +110,30 @@ class PublicController extends Controller
         // Handle simple sorting if requested
         if ($request->has('sort_by')) {
             $sortBy = $request->sort_by;
-            usort($formattedData, function($a, $b) use ($sortBy) {
+            usort($formattedData, function ($a, $b) use ($sortBy) {
                 if ($sortBy === 'fee_asc') {
                     return $a['tuition'] <=> $b['tuition'];
                 }
+
                 return 0;
             });
         }
 
-        return response()->json([
-            'message' => 'Data Marketplace Ready',
-            'data' => $formattedData
-        ]);
+        return ApiResponse::success($formattedData, 'Data Marketplace Ready');
+    }
+
+    private function applyJsonSettingFilter(Builder $query, string $key, string $value): void
+    {
+        $query->whereRaw(
+            'LOWER(JSON_UNQUOTE(JSON_EXTRACT(settings, ?))) = ?',
+            ['$."'.$key.'"', strtolower($value)],
+        );
     }
 
     public function downloadTemplate()
     {
         // For simplicity when not using Maatwebsite Excel, we return a CSV
-        $filename = "Template_Transkrip_KonverPro.csv";
+        $filename = 'Template_Transkrip_KonverPro.csv';
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"$filename\"",
@@ -112,7 +141,7 @@ class PublicController extends Controller
 
         $callback = function () {
             $file = fopen('php://output', 'w');
-            
+
             // Kolom dummy sesuai yg dibaca frontend
             fputcsv($file, ['Nama', ':', 'Mahasiswa Contoh']);
             fputcsv($file, ['Universitas', ':', 'Universitas Asal']);
@@ -122,7 +151,7 @@ class PublicController extends Controller
             fputcsv($file, ['MK001', 'Algoritma Pemrograman', '3', 'A']);
             fputcsv($file, ['MK002', 'Basis Data', '3', 'B+']);
             fputcsv($file, ['MK003', 'Struktur Data', '3', 'A-']);
-            
+
             fclose($file);
         };
 

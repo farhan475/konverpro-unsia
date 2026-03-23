@@ -14,7 +14,7 @@ class Course extends Model
 
     protected $fillable = [
         'study_program_id', 'code', 'name', 'sks', 'semester',
-        'is_mandatory', 'keywords'
+        'is_mandatory', 'keywords', 'level'
     ];
 
     protected $casts = [

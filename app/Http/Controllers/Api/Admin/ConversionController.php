@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\FinalizeConversionRequest;
+use App\Http\Requests\Admin\ReviewConversionDetailRequest;
 use App\Models\Conversion;
-use App\Models\ConversionDetail;
 use App\Models\University;
+use App\Services\Admin\ConversionReviewService;
+use App\Support\AcademicSettingsSupport;
+use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -15,102 +19,77 @@ class ConversionController extends Controller
     {
         // Nanti filter by University ID dari user yang login
         // $universityId = auth()->user()->university_id;
-        
+
         $user = Auth::user();
         // Untuk sekarang (Testing), kita ambil semua dulu atau hardcode ID UNSIA
         $query = Conversion::with(['student', 'studyProgram'])
             ->where('status', '!=', 'draft'); // Yang draft belum disubmit
 
-            if($user->role !== 'super_admin') {
-                $query->where('university_id', $user->university_id);
-            }
-            
-            $conversions = $query->orderBy('created_at', 'desc')->paginate(10);
-            
-        return response()->json([
-            'message' => 'Data fetched',
-            'data' => $conversions
-        ]);
+        if ($user->role !== 'super_admin') {
+            $query->where('university_id', $user->university_id);
+        }
+
+        $conversions = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        return ApiResponse::success($conversions, 'Data fetched');
+    }
+
+    public function show($id)
+    {
+        $conversion = $this->baseConversionQuery()
+            ->with([
+                'university:id,name,logo_path,settings',
+                'studyProgram:id,code,name,level,settings',
+                'student:id,name,email,profile_data',
+                'details.targetCourse:id,code,name',
+            ])
+            ->findOrFail($id);
+
+        return ApiResponse::success($conversion, 'Detail konversi berhasil diambil');
+    }
+
+    public function officialDocument($id)
+    {
+        $conversion = $this->baseConversionQuery()
+            ->with([
+                'student:id,name,email,profile_data',
+                'university:id,name,logo_path,settings',
+                'studyProgram:id,code,name,level,settings',
+                'studyProgram.courses:id,study_program_id,code,name,sks,semester,is_mandatory',
+                'details.targetCourse:id,code,name,sks',
+            ])
+            ->findOrFail($id);
+
+        return ApiResponse::success(
+            AcademicSettingsSupport::buildOfficialDocumentPayload($conversion),
+            'Payload dokumen resmi berhasil diambil',
+        );
     }
 
     /**
      * Admin melakukan Review Manual per Mata Kuliah
      */
-    public function reviewDetail(Request $request, $detailId)
-    {
-        $request->validate([
-            'status' => 'required|in:approved,rejected', // Keputusan Admin
-            'admin_notes' => 'nullable|string'
-        ]);
+    public function reviewDetail(
+        ReviewConversionDetailRequest $request,
+        string $detailId,
+        ConversionReviewService $service,
+    ) {
+        $service->reviewDetail($detailId, $request->validated());
 
-        $detail = ConversionDetail::findOrFail($detailId);
-        
-        $detail->update([
-            'status' => $request->status === 'approved' ? 'manual_accepted' : 'rejected',
-            'admin_notes' => $request->admin_notes
-        ]);
-
-        // Hitung ulang total SKS di Header Conversion
-        $this->recalculateTotalSks($detail->conversion_id);
-
-        return response()->json(['message' => 'Item berhasil direview']);
+        return ApiResponse::success(null, 'Item berhasil direview');
     }
 
     /**
      * Finalisasi (Ketuk Palu) Konversi
      */
-    public function finalize(Request $request, $conversionId)
-    {
-        try {
-            \Illuminate\Support\Facades\DB::beginTransaction();
+    public function finalize(
+        FinalizeConversionRequest $request,
+        string $conversionId,
+        ConversionReviewService $service,
+    ) {
+        $service->finalize($conversionId, $request->validated());
 
-            $conversion = Conversion::findOrFail($conversionId);
-            
-            // Deduct balance and create transaction if not already approved
-            if ($conversion->status !== 'approved') {
-                $university = University::findOrFail($conversion->university_id);
-                $cost = 0;
-                
-                // If the student is a lead, you would charge lead rate, if internal, internal rate
-                // Assuming cost_per_check represents the default internal rate
-                $cost = $university->cost_per_check; 
-                
-                if ($university->billing_mode !== 'independent') {
-                    if ($university->balance < $cost) {
-                        return response()->json(['message' => 'Saldo kampus tidak mencukupi.'], 400);
-                    }
-                    $university->decrement('balance', $cost);
-
-                    \App\Models\Transaction::create([
-                        'invoice_number' => 'CNV-' . time() . '-' . $conversion->id,
-                        'university_id' => $university->id,
-                        'user_id' => Auth::id(),
-                        'type' => 'conversion_fee',
-                        'amount' => -$cost,
-                        'status' => 'success'
-                    ]);
-                }
-            }
-
-            $conversion->update([
-                'status' => 'approved',
-                'admin_notes' => $request->notes
-            ]);
-
-            \Illuminate\Support\Facades\DB::commit();
-
-            return response()->json([
-                'message' => 'Konversi disetujui sepenuhnya'
-            ], 200);
-
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\DB::rollBack();
-            // JIKA ERROR, TANGKAP DAN KIRIM KE FRONTEND
-            return response()->json([
-                'message' => 'Backend Error: ' . $e->getMessage(),
-                'line' => $e->getLine()
-            ], 500);
-        }
+        return ApiResponse::success(null, 'Konversi disetujui sepenuhnya');
     }
 
     public function getDashboardStats()
@@ -125,20 +104,18 @@ class ConversionController extends Controller
             'balance' => $univ->balance,
         ];
 
-        return response()->json(['data' => $stats]);
+        return ApiResponse::success($stats);
     }
 
-    // Helper Private
-    private function recalculateTotalSks($conversionId)
+    private function baseConversionQuery()
     {
-        $total = ConversionDetail::where('conversion_id', $conversionId)
-            ->whereIn('status', ['auto_accepted', 'manual_accepted'])
-            ->with('targetCourse') // Join ke tabel course untuk ambil SKS target
-            ->get()
-            ->sum(function ($detail) {
-                return $detail->targetCourse ? $detail->targetCourse->sks : 0;
-            });
+        $user = Auth::user();
+        $query = Conversion::query();
 
-        Conversion::where('id', $conversionId)->update(['total_sks_accepted' => $total]);
+        if ($user->role !== 'super_admin') {
+            $query->where('university_id', $user->university_id);
+        }
+
+        return $query;
     }
 }

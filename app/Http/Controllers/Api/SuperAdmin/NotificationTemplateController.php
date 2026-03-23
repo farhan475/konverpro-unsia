@@ -3,51 +3,40 @@
 namespace App\Http\Controllers\Api\SuperAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\NotificationTemplate;
-use Illuminate\Http\Request;
+use App\Http\Requests\SuperAdmin\NotificationTemplateUpsertRequest;
+use App\Services\SuperAdmin\NotificationTemplateService;
+use App\Support\ApiResponse;
 
 class NotificationTemplateController extends Controller
 {
-    public function index()
+    public function index(NotificationTemplateService $service)
     {
-        $templates = NotificationTemplate::orderBy('created_at', 'desc')->get();
-        return response()->json(['data' => $templates]);
+        return ApiResponse::success($service->list());
     }
 
-    public function store(Request $request)
+    public function store(NotificationTemplateUpsertRequest $request, NotificationTemplateService $service)
     {
-        $request->validate([
-            'name' => 'required|string',
-            'trigger' => 'required|string|unique:notification_templates,trigger',
-            'subject' => 'required|string',
-            'body' => 'required|string',
-        ]);
-
-        $template = NotificationTemplate::create($request->all());
-
-        return response()->json(['message' => 'Template berhasil dibuat', 'data' => $template]);
+        return ApiResponse::success(
+            $service->create($request->validated()),
+            'Template berhasil dibuat',
+        );
     }
 
-    public function update(Request $request, $id)
-    {
-        $template = NotificationTemplate::findOrFail($id);
-
-        $request->validate([
-            'name' => 'required|string',
-            'trigger' => 'required|string|unique:notification_templates,trigger,' . $template->id,
-            'subject' => 'required|string',
-            'body' => 'required|string',
-        ]);
-
-        $template->update($request->all());
-
-        return response()->json(['message' => 'Template berhasil diupdate', 'data' => $template]);
+    public function update(
+        NotificationTemplateUpsertRequest $request,
+        string $id,
+        NotificationTemplateService $service,
+    ) {
+        return ApiResponse::success(
+            $service->update($id, $request->validated()),
+            'Template berhasil diupdate',
+        );
     }
 
-    public function destroy($id)
+    public function destroy(string $id, NotificationTemplateService $service)
     {
-        $template = NotificationTemplate::findOrFail($id);
-        $template->delete();
-        return response()->json(['message' => 'Template berhasil dihapus']);
+        $service->delete($id);
+
+        return ApiResponse::success(null, 'Template berhasil dihapus');
     }
 }

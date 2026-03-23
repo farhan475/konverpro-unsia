@@ -54,6 +54,7 @@ class AcademicSeeder extends Seeder
                 'sks' => $c['sks'],
                 'semester' => $c['sem'],
                 'is_mandatory' => $c['is_mandatory'] ?? false,
+                'level' => $prodi->level,
                 'keywords' => $c['keywords'] ?? [] // JSON Keywords
             ]);
         }

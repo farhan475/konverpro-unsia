@@ -8,7 +8,6 @@ use App\Models\Transaction;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Storage;
 use App\Jobs\ProcessTranscriptJob;
 use Exception;
 
@@ -20,8 +19,9 @@ class ConversionService
     public function submitTranscript(array $data, UploadedFile $file)
     {
         return DB::transaction(function () use ($data, $file) {
-            // 1. Ambil Data Kampus Tujuan
-            $university = University::findOrFail($data['university_id']);
+            $university = University::query()
+                ->lockForUpdate()
+                ->findOrFail($data['university_id']);
             
             // 2. Logic Pembayaran (Hybrid)
             $paymentStatus = 'pending';
@@ -33,10 +33,8 @@ class ConversionService
                     throw new Exception("Kuota kampus habis atau saldo tidak mencukupi.");
                 }
 
-                // Potong Saldo Kampus (Atomic)
                 $university->decrement('balance', $university->cost_per_check);
-                
-                // Catat Transaksi Kampus (Agar tercatat di Audit)
+
                 $this->recordTransaction(
                     $university, 
                     null, 
@@ -50,17 +48,12 @@ class ConversionService
                 // Skenario B: Mandiri (Mahasiswa Bayar)
                 $paymentStatus = 'pending';
                 $status = 'draft'; // Tunggu bayar dulu baru diproses
-                $amount = $university->student_fee;
+                $amount = $university->student_registration_fee;
                 
-                // TODO: Di sini nanti kita generate Midtrans Token
-                // $snapToken = MidtransService::getSnapToken($amount);
             }
 
-            // 3. Simpan File (Secure Storage)
-            // Disimpan di folder 'private', bukan 'public' agar tidak bisa diakses via URL langsung
             $path = $file->store('transcripts/' . date('Y-m'), 'local');
 
-            // 4. Buat Record Konversi
             $conversion = Conversion::create([
                 'trx_id' => 'TRX-' . strtoupper(Str::random(8)),
                 'student_id' => $data['student_id'],
@@ -76,9 +69,7 @@ class ConversionService
                 ]
             ]);
 
-            // 5. Trigger Job Parsing Excel (Jika status processing)
             if ($status === 'processing') {
-                // TODO: Kita akan buat Job ini di langkah berikutnya
                 ProcessTranscriptJob::dispatch($conversion);
             }
 

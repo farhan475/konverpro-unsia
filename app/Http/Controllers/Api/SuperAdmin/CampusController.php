@@ -3,94 +3,58 @@
 namespace App\Http\Controllers\Api\SuperAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\University;
+use App\Http\Requests\SuperAdmin\AdjustCampusBalanceRequest;
+use App\Http\Requests\SuperAdmin\CampusUpsertRequest;
+use App\Services\SuperAdmin\CampusManagementService;
+use App\Support\ApiResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class CampusController extends Controller
 {
-    public function index()
+    public function index(CampusManagementService $service)
     {
-        $campuses = University::withCount('conversions')->orderBy('created_at', 'desc')->get();
-        return response()->json(['data' => $campuses]);
+        return ApiResponse::success($service->list());
     }
 
-    public function store(Request $request)
+    public function store(CampusUpsertRequest $request, CampusManagementService $service)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email',
-            'plan' => 'required|string',
-        ]);
-
-        $university = University::create([
-            'name' => $request->name,
-            'slug' => Str::slug($request->name . '-' . time()),
-            'billing_mode' => 'subsidy', // default
-            'student_fee' => 0,
-            'cost_per_check' => 0,
-            'balance' => 0,
-            'is_active' => true,
-            'is_partner' => $request->plan === 'Enterprise',
-            'settings' => [
-                'email' => $request->email,
-                'plan' => $request->plan,
-            ]
-        ]);
-
-        return response()->json(['message' => 'Kampus berhasil didaftarkan', 'data' => $university]);
+        return ApiResponse::created(
+            $service->create($request->validated(), $request),
+            'Kampus berhasil didaftarkan',
+        );
     }
 
-    public function update(Request $request, $id)
+    public function update(CampusUpsertRequest $request, string $id, CampusManagementService $service)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email',
-            'status' => 'required|in:active,pending,suspended',
-            'plan' => 'required|string',
-            'is_partner' => 'required|boolean',
-        ]);
-
-        $university = University::findOrFail($id);
-        
-        $settings = $university->settings ?? [];
-        $settings['email'] = $request->email;
-        $settings['plan'] = $request->plan;
-        if ($request->has('custom_rates')) {
-            $settings['custom_rates'] = $request->custom_rates;
-        } else {
-            unset($settings['custom_rates']);
-        }
-
-        $university->update([
-            'name' => $request->name,
-            'is_active' => $request->status === 'active',
-            'is_partner' => $request->is_partner,
-            'student_registration_fee' => $request->regFee ?? $university->student_registration_fee,
-            'student_fee' => $request->tuitionFee ?? $university->student_fee,
-            'settings' => $settings,
-        ]);
-
-        return response()->json(['message' => 'Kampus berhasil diupdate', 'data' => $university]);
+        return ApiResponse::success(
+            $service->update($id, $request->validated(), $request),
+            'Kampus berhasil diupdate',
+        );
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, string $id, CampusManagementService $service)
     {
-        $university = University::findOrFail($id);
-        $university->delete();
-        return response()->json(['message' => 'Kampus berhasil dihapus']);
+        $service->delete($id, $request);
+
+        return ApiResponse::success(null, 'Kampus berhasil dihapus');
     }
 
-    // Optional: adjust balance manual
-    public function adjustBalance(Request $request, $id)
-    {
-        $request->validate([
-            'amount' => 'required|numeric'
-        ]);
-
-        $university = University::findOrFail($id);
-        $university->increment('balance', $request->amount);
-
-        return response()->json(['message' => 'Saldo berhasil diupdate', 'balance' => $university->balance]);
+    public function adjustBalance(
+        AdjustCampusBalanceRequest $request,
+        string $id,
+        CampusManagementService $service,
+    ) {
+        return ApiResponse::success(
+            null,
+            'Saldo berhasil diupdate',
+            200,
+            [
+                'balance' => $service->adjustBalance(
+                    $id,
+                    (float) $request->validated('amount'),
+                    $request,
+                ),
+            ],
+        );
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CampusCurriculumController;
 use App\Http\Controllers\Api\CampusSettingsController;
 use App\Http\Controllers\Api\ConversionController;
 use App\Http\Controllers\Api\PublicController;
+use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -17,14 +18,13 @@ Route::get('/public/campuses', [PublicController::class, 'getActiveCampuses']);
 Route::get('/public/marketplace', [PublicController::class, 'getMarketplaceData']);
 Route::get('/public/template', [PublicController::class, 'downloadTemplate']);
 
-
 // --- PROTECTED ROUTES (Butuh Login/Token) ---
 Route::middleware('auth:sanctum')->group(function () {
 
     // Auth & User
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', function (Request $request) {
-        return $request->user();
+        return ApiResponse::success($request->user());
     });
 
     // 1. BLOK ADMIN KONVERSI (Pakai prefix /admin)

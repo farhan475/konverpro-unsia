@@ -23,8 +23,8 @@ class SystemController extends Controller
 
     public function importData(ImportBackupRequest $request, SystemBackupService $service)
     {
-        $service->import($request->file('backup_file'));
+        $summary = $service->import($request->file('backup_file'));
 
-        return ApiResponse::success(null, 'Restorasi data (parsial) berhasil disimulasikan');
+        return ApiResponse::success($summary, 'Restorasi data parsial berhasil dijalankan');
     }
 }

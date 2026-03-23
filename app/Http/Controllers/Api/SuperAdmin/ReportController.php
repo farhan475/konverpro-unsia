@@ -72,7 +72,7 @@ class ReportController extends Controller
             'total_revenue' => (float) $transactions->sum('total'),
         ];
 
-        return ApiResponse::success(null, null, 200, [
+        return ApiResponse::success([
             'chart' => $chartData,
             'summary' => $summary,
         ]);

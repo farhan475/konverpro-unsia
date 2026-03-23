@@ -81,9 +81,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
             report($exception);
 
-            return ApiResponse::error(
-                config('app.debug') ? $exception->getMessage() : 'Terjadi kesalahan pada server.',
-                500,
-            );
+            return ApiResponse::error('Terjadi kesalahan pada server.', 500);
         });
     })->create();

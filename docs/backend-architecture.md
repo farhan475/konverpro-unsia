@@ -71,6 +71,7 @@ Tujuannya:
 
 - error validasi, auth, authorization, not found, dan 500 memiliki format konsisten
 - controller sukses mengembalikan envelope yang lebih stabil untuk FE
+- exception server tidak mengembalikan detail mentah ke client API
 
 ## Logging dan Audit
 

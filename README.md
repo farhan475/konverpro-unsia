@@ -86,3 +86,4 @@ php artisan test
 - exception API dirender konsisten melalui `bootstrap/app.php`
 - endpoint backup mengirim file JSON stream
 - import backup saat ini masih partial restore, bukan full destructive restore
+- restore backup hanya menerima snapshot JSON dengan validasi format dan ukuran file

@@ -71,3 +71,4 @@ Field penting dari `.env.example`:
 
 - export backup menghasilkan file JSON
 - restore backup masih partial restore dan harus digunakan dengan hati-hati
+- restore backup hanya menerima file JSON hasil export sistem dengan batas ukuran 10 MB

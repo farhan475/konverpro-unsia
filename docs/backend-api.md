@@ -95,9 +95,16 @@ Sukses:
 
 - `message` opsional
 - `data` dipakai untuk payload utama
-- beberapa endpoint memakai field tambahan top-level bila diperlukan, misalnya login atau report tertentu
+- endpoint protected utama seperti `/api/user` dan report super admin sekarang memakai envelope `data`
+- beberapa endpoint auth masih membawa field tambahan top-level bila memang dibutuhkan saat login
 
 Error:
 
 - validasi: `message` + `errors`
 - auth / authorization / not found / server error: `message`
+
+## Backup Notes
+
+- `GET /api/super-admin/system/backup` mengembalikan file JSON stream
+- `POST /api/super-admin/system/restore` menerima snapshot JSON maksimal 10 MB
+- restore hanya memproses section yang didukung untuk partial restore

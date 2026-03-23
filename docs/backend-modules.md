@@ -156,3 +156,4 @@ Fungsi:
 
 - export snapshot JSON
 - partial restore dari file backup
+- validasi format backup, ukuran file, dan section yang boleh dipulihkan
